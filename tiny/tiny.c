@@ -11,9 +11,9 @@
 void doit(int fd);
 void read_requesthdrs(rio_t *rp);
 int parse_uri(char *uri, char *filename, char *cgiargs);
-void serve_static(int fd, char *filename, int filesize);
+void serve_static(int fd, char *filename, int filesize,char *method);
 void get_filetype(char *filename, char *filetype);
-void serve_dynamic(int fd, char *filename, char *cgiargs);
+void serve_dynamic(int fd, char *filename, char *cgiargs,char *method);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg);
 
@@ -60,11 +60,11 @@ void doit(int fd) {
     sscanf(buf, "%s %s %s", method, uri, version); // 요청 라인에서 메서드, URI, HTTP 버전 추출
 
     // GET 메소드에 대해서만 적용
-    if (strcasecmp(method, "GET")) {
+    if (strcasecmp(method, "GET")!=0&&strcasecmp(method,"HEAD")!=0) {
         clienterror(fd, method, "5O1", "Not implemented", "Tiny does not implement this method");
         return;
     }
-
+    
     read_requesthdrs(&rio); // 요청 헤더 읽기
 
     /* Parse URI from GET request */
@@ -81,7 +81,7 @@ void doit(int fd) {
             clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
             return;
         }
-        serve_static(fd, filename, sbuf.st_size); // 정적파일 제공
+        serve_static(fd, filename, sbuf.st_size,method); // 정적파일 제공
     }
     // 동적 파일일 경우
     else {
@@ -89,7 +89,7 @@ void doit(int fd) {
             clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program");
             return;
         }
-        serve_dynamic(fd, filename, cgiargs); // 동적파일 제공
+        serve_dynamic(fd, filename, cgiargs,method); // 동적파일 제공
     }
 }
 
@@ -165,21 +165,21 @@ int parse_uri(char *uri, char *filename, char *cgiargs) {
 /*
  * serve_static - 정적 파일 전달
  */
-void serve_static(int fd, char *filename, int filesize) {
+void serve_static(int fd, char *filename, int filesize,char *method) {
     int srcfd;
     char *srcp, filetype[MAXLINE], buf[MAXBUF];
 
     // 응답헤더 전송
     get_filetype(filename, filetype); // 파일의 확장자 추출
     sprintf(buf, "HTTP/1.1 200 0K\r\n");
-    sprintf(buf, "%sServer : Tiny Web Server\r\n", buf);
+    sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
     sprintf(buf, "%sConnection: close\r\n", buf);
-    sprintf(buf, "%sContent—length: %d\r\n", buf, filesize);
+    sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
     sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
     Rio_writen(fd, buf, strlen(buf));
     printf("Response headers:\n");
     printf("%s", buf);
-
+    if(strcasecmp(method,"GET")==0) {
     //  srcfd = Open(filename, O_RDONLY, 0); //파일을 열고
     //  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); //매모리 매핑 수행
     //  Close(srcfd); //파일 닫기
@@ -192,6 +192,7 @@ void serve_static(int fd, char *filename, int filesize) {
     Close(srcfd);
     Rio_writen(fd, srcp, filesize); // 읽은 데이터를 fd에 씀
     Free(srcp);
+    }
 }
 /*
  * get_filetype — 파일 확장자 추출(content-type)
@@ -214,7 +215,7 @@ void get_filetype(char *filename, char *filetype) {
 /*
  * serve_dynamic- 동적 파일 전달
  */
-void serve_dynamic(int fd, char *filename, char *cgiargs) {
+void serve_dynamic(int fd, char *filename, char *cgiargs,char *method) {
     char buf[MAXLINE], *emptyList[] = {NULL};
 
     sprintf(buf, "HTTP/1.1 200 OK\r\n");
@@ -226,6 +227,7 @@ void serve_dynamic(int fd, char *filename, char *cgiargs) {
     if (Fork() == 0) {
 
         setenv("QUERY_STRING", cgiargs, 1);   // cgi 인자를 QUERY_STRING으로 설정(추후 환경변수 생성해야함)
+        setenv("REQUEST_METHOD",method,1);
         Dup2(fd, STDOUT_FILENO);              // 표준 출력을 fd(클라이언트 소켓 파일 디스크립터)로 지정 =>동적 파일 생성하는 출력 클라이언트에게 전송
         Execve(filename, emptyList, environ); // 동적 파일 실행(새로운 프로세스 실행)
     }
