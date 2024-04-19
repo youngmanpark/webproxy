@@ -101,13 +101,16 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
 
     // http response body 설정
     sprintf(body, "<html><title>Tiny Error</title>");
-    sprintf(body, "%s<body bgcolor=""ffffff"">\r\n",body);
+    sprintf(body, "%s<body bgcolor="
+                  "ffffff"
+                  ">\r\n",
+            body);
     sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg);
     sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
     sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
 
     // http response출력
-    sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
+    sprintf(buf, "HTTP/1.1 %s %s\r\n", errnum, shortmsg);
     Rio_writen(fd, buf, strlen(buf));
     sprintf(buf, "Content-type: text/html\r\n");
     Rio_writen(fd, buf, strlen(buf));
@@ -130,45 +133,45 @@ void read_requesthdrs(rio_t *rp) {
     return;
 }
 /*
-* parse_uri - URI를 분석하여 정적 or 동적 파일 판별 후 처리  
-*/
+ * parse_uri - URI를 분석하여 정적 or 동적 파일 판별 후 처리
+ */
 int parse_uri(char *uri, char *filename, char *cgiargs) {
     char *ptr;
 
-    //정적 파일일 경우
-    if (!strstr(uri, "cgi-bin")) { //cgi-bin 포함인지 확인
+    // 정적 파일일 경우
+    if (!strstr(uri, "cgi-bin")) { // cgi-bin 포함인지 확인
         strcpy(cgiargs, "");
-        strcpy(filename, "."); 
-        strcat(filename, uri); //filname에 uri 저장
-        if (uri[strlen(uri) - 1] == '/') // URI가 /로 끝나면
-            strcat(filename, "home.html");// 기본 파일 이름 추가
+        strcpy(filename, ".");
+        strcat(filename, uri);              // filname에 uri 저장
+        if (uri[strlen(uri) - 1] == '/')    // URI가 /로 끝나면
+            strcat(filename, "index.html"); // 기본 파일 이름 추가
         return 1;
-    } 
-    //동적 파일일 경우
+    }
+    // 동적 파일일 경우
     else {
-        ptr = index(uri, '?');//cgi 인자 찾기
-        //cgi 인자가 존재할 경우
+        ptr = index(uri, '?'); // cgi 인자 찾기
+        // cgi 인자가 존재할 경우
         if (ptr) {
-            strcpy(cgiargs, ptr + 1); //cgi 인자 추출 후 null삽입
+            strcpy(cgiargs, ptr + 1); // cgi 인자 추출 후 null삽입
             *ptr = '\0';
         } else
-            strcpy(cgiargs, ""); //cgi 인자가 없다면 빈문자열 삽입
+            strcpy(cgiargs, ""); // cgi 인자가 없다면 빈문자열 삽입
         strcpy(filename, ".");
-        strcat(filename, uri);//filname에 uri 저장
+        strcat(filename, uri); // filname에 uri 저장
         return 0;
     }
 }
 
 /*
-* serve_static - 정적 파일 전달
-*/
+ * serve_static - 정적 파일 전달
+ */
 void serve_static(int fd, char *filename, int filesize) {
     int srcfd;
     char *srcp, filetype[MAXLINE], buf[MAXBUF];
 
-    //응답헤더 전송
-    get_filetype(filename, filetype); //파일의 확장자 추출
-    sprintf(buf, "HTTP/1.0 200 0K\r\n");
+    // 응답헤더 전송
+    get_filetype(filename, filetype); // 파일의 확장자 추출
+    sprintf(buf, "HTTP/1.1 200 0K\r\n");
     sprintf(buf, "%sServer : Tiny Web Server\r\n", buf);
     sprintf(buf, "%sConnection: close\r\n", buf);
     sprintf(buf, "%sContent—length: %d\r\n", buf, filesize);
@@ -177,12 +180,18 @@ void serve_static(int fd, char *filename, int filesize) {
     printf("Response headers:\n");
     printf("%s", buf);
 
-    //response body 전송
-    srcfd = Open(filename, O_RDONLY, 0); //파일을 열고
-    srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); //매모리 매핑 수행
-    Close(srcfd); //파일 닫기
-    Rio_writen(fd, srcp, filesize); //파일 읽어들이기
-    Munmap(srcp, filesize); //매모리 매핑 해제
+    //  srcfd = Open(filename, O_RDONLY, 0); //파일을 열고
+    //  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); //매모리 매핑 수행
+    //  Close(srcfd); //파일 닫기
+    //  Rio_writen(fd, srcp, filesize); //파일 읽어들이기
+    //  Munmap(srcp, filesize); //매모리 매핑 해제
+    // response body 전송
+    srcfd = Open(filename, O_RDONLY, 0); // 파일을 읽어 fd로 반환
+    srcp = (char *)malloc(filesize);     // 파일 size만큼 메모리 할당
+    rio_readn(srcfd, srcp, filesize);    // 파일에서 데이터를 읽어오기 (dilesize 만큼 데이터를 읽어 srcp가 가리키는 메모리에 저장)
+    Close(srcfd);
+    Rio_writen(fd, srcp, filesize); // 읽은 데이터를 fd에 씀
+    Free(srcp);
 }
 /*
  * get_filetype — 파일 확장자 추출(content-type)
@@ -196,27 +205,29 @@ void get_filetype(char *filename, char *filetype) {
         strcpy(filetype, "image/png");
     else if (strstr(filename, ".jpg"))
         strcpy(filetype, "image/jpeg");
+    else if (strstr(filename, ".mp4"))
+        strcpy(filetype, "viedo/mp4");
     else
         strcpy(filetype, "text/plain");
 }
 
 /*
-* serve_dynamic- 동적 파일 전달
-*/
+ * serve_dynamic- 동적 파일 전달
+ */
 void serve_dynamic(int fd, char *filename, char *cgiargs) {
     char buf[MAXLINE], *emptyList[] = {NULL};
 
-    sprintf(buf, "HTTP/1.0 200 OK\r\n");
+    sprintf(buf, "HTTP/1.1 200 OK\r\n");
     Rio_writen(fd, buf, strlen(buf));
     sprintf(buf, "Server: Tiny Web Server\r\n");
     Rio_writen(fd, buf, strlen(buf));
 
-    //자식 프로세스 생성후 분리
+    // 자식 프로세스 생성후 분리
     if (Fork() == 0) {
 
-        setenv("QUERY_STRING", cgiargs, 1); //cgi 인자를 QUERY_STRING으로 설정(추후 환경변수 생성해야함)
-        Dup2(fd, STDOUT_FILENO); // 표준 출력을 fd(클라이언트 소켓 파일 디스크립터)로 지정 =>동적 파일 생성하는 출력 클라이언트에게 전송
-        Execve(filename, emptyList, environ); //동적 파일 실행(새로운 프로세스 실행)
+        setenv("QUERY_STRING", cgiargs, 1);   // cgi 인자를 QUERY_STRING으로 설정(추후 환경변수 생성해야함)
+        Dup2(fd, STDOUT_FILENO);              // 표준 출력을 fd(클라이언트 소켓 파일 디스크립터)로 지정 =>동적 파일 생성하는 출력 클라이언트에게 전송
+        Execve(filename, emptyList, environ); // 동적 파일 실행(새로운 프로세스 실행)
     }
     Wait(NULL);
 }
