@@ -51,6 +51,7 @@ void doit(int fd) {
     char filename[MAXLINE], request_ip[MAXLINE], port[MAXLINE];
     rio_t rio, rio_com;
     int clientfd;
+
     // 요청 라인을 읽고 분석
     Rio_readinitb(&rio, fd);           // fd의 주소값을 rio로
     Rio_readlineb(&rio, buf, MAXLINE); // 요청 라인 읽기(한줄)
@@ -67,16 +68,11 @@ void doit(int fd) {
     }
 
     // uri 파싱
-    parse_uri(uri, request_ip, port, filename); // URI를 요청 ip, port, file이름 추출
-
-    clientfd = Open_clientfd(request_ip, port);
-
-    // 요청 헤더를 읽고 서버에 전송
-    read_requesthdrs(method, request_ip, user_agent_hdr, clientfd, filename);
-
-    //서버에게 응답을 받고 클라이언트에게 전송
-    server_to_client(clientfd,fd);
-   
+    parse_uri(uri, request_ip, port, filename);                               // URI를 요청 ip, port, file이름 추출
+    clientfd = Open_clientfd(request_ip, port);                               // 프록시 서버 소켓 생성
+    read_requesthdrs(method, request_ip, user_agent_hdr, clientfd, filename); // 요청 헤더를 읽고 서버에 전송
+    server_to_client(clientfd, fd);                                           // 서버에게 응답을 받고 클라이언트에게 전송
+    Close(clientfd);                                                          // 소켓 닫기
 }
 int parse_uri(char *uri, char *request_ip, char *port, char *filename) {
     /*
@@ -102,6 +98,52 @@ void read_requesthdrs(char *method, char *request_ip, char *user_agent_hdr, int 
     // 서버로 보낸다.
     Rio_writen(clientfd, buf, strlen(buf));
 }
-void server_to_client(int clientfd, int fd){
+void server_to_client(int clientfd, int fd) {
+    /*
+     *서버한테 받은 응답 읽어오기
+     *프록시 서버가 해당 응답을 header는 바로 보내고
+     *body는 content-type의 크기만큼 한번에 모아서 보내기
+     */
+    char *srcp, *p, content_length[MAXLINE], buf[MAXBUF];
+    rio_t response_rio;
+    int content_len;
 
+    Rio_readinitb(&response_rio, clientfd); // 초기화
+
+    // header 전송
+    while (strcmp(buf, "\r\n")) {
+        if (strstr(buf, "Content-length"))
+            content_len = atoi(strchr(buf, ':') + 1);
+        Rio_readlineb(&response_rio, buf, MAXLINE); // 응답라인 읽기
+        Rio_writen(fd, buf, strlen(buf));
+    }
+
+    // body 전송
+    srcp = malloc(content_len);
+    Rio_readnb(&response_rio, srcp, content_len);
+    Rio_writen(fd, srcp, content_len);
+    Free(srcp);
+}
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg) {
+    // MAXBUF : 8192
+    char buf[MAXLINE], body[MAXBUF];
+
+    /*Build the HTTP response body*/
+    sprintf(body, "<html><title>Tiny Error</title>");
+    sprintf(body, "%s<body bgcolor="
+                  "ffffff"
+                  ">\r\n",
+            body);
+    sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg);
+    sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
+    sprintf(body, "%s<hr><em>The tiny Web server</em>\r\n", body);
+
+    /*Print the HTTP response*/
+    sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
+    Rio_writen(fd, buf, strlen(buf));
+    sprintf(buf, "Content-type: text/html\r\n");
+    Rio_writen(fd, buf, strlen(buf));
+    sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body));
+    Rio_writen(fd, buf, strlen(buf));
+    Rio_writen(fd, body, strlen(body));
 }
