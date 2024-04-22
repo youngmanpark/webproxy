@@ -60,6 +60,10 @@ void doit(int fd) {
     printf("%s", buf);
 
     sscanf(buf, "%s %s %s", method, uri, version); // 요청 라인에서 메서드, URI, HTTP 버전 추출
+    
+    if (strstr(uri,"favicon")){
+        return;
+    }
 
     // GET,HEAD 메소드에 대해서만 적용
     if (strcasecmp(method, "GET") != 0 && strcasecmp(method, "HEAD") != 0) {
@@ -80,15 +84,36 @@ int parse_uri(char *uri, char *request_ip, char *port, char *filename) {
     요청ip,filename,port,http_version
     filename과 port는 있을 수도있고 없을수도있음
     URI_examle= http://request_ip:port/path
+    http://request_ip:port
+    http://request_ip/
 
     */
+    char *ip_ptr, *port_ptr, *filename_ptr;
+
+    ip_ptr = strstr(uri, "//") ? strstr(uri, "//") + 2 : uri + 1;
+    port_ptr = strchr(ip_ptr, ':');
+    filename_ptr = strchr(ip_ptr, '/');
+
+    if (filename_ptr != NULL) {
+        strcpy(filename, filename_ptr);
+        *filename_ptr = '\0';
+    } else
+        strcpy(filename, "/");
+
+    if (port_ptr != NULL) {
+        strcpy(port, port_ptr + 1);
+        *port_ptr = '\0';
+
+    } else {
+        strcpy(port, "80");
+    }
+    strcpy(request_ip, ip_ptr);
 }
 
 void read_requesthdrs(char *method, char *request_ip, char *user_agent_hdr, int clientfd, char *filename) {
     char buf[MAXLINE]; // 임시 버프
 
     /*자른 데이터를 헤더로 만들어 buf로 tiny에게 전달*/
-    // 앞줄을 하나씩 물고와요 한다.
     sprintf(buf, "%s %s %s\r\n", method, filename, "HTTP/1.0");
     sprintf(buf, "%sHost: %s\r\n", buf, request_ip);
     sprintf(buf, "%s%s", buf, user_agent_hdr);
@@ -114,6 +139,7 @@ void server_to_client(int clientfd, int fd) {
     while (strcmp(buf, "\r\n")) {
         if (strstr(buf, "Content-length"))
             content_len = atoi(strchr(buf, ':') + 1);
+
         Rio_readlineb(&response_rio, buf, MAXLINE); // 응답라인 읽기
         Rio_writen(fd, buf, strlen(buf));
     }
