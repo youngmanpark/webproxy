@@ -16,9 +16,11 @@ int parse_uri(char *uri, char *request_ip, char *port, char *filename);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 void read_requesthdrs(char *method, char *request_ip, char *user_agent_hdr, int clientfd, char *filename);
 void server_to_client(int clientfd, int fd);
+void *thread(void *vargp);
 
 int main(int argc, char **argv) {
-    int listenfd, connfd; // 서버소켓,클라이언트 소켓 fd
+    int listenfd, *connfdp; // 서버소켓,클라이언트 소켓 fd
+    pthread_t tid;
     char hostname[MAXLINE], port[MAXLINE];
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
@@ -33,14 +35,26 @@ int main(int argc, char **argv) {
     // 무한 서버 루프 실행
     while (1) {
         clientlen = sizeof(clientaddr);
-        connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);                       // 반복적으로 연결 요청 접수
+        connfdp=Malloc(sizeof(int));
+        *connfdp = Accept(listenfd, (SA *)&clientaddr, &clientlen);                       // 반복적으로 연결 요청 접수
         Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0); // 소켓 주소를 호스트 이름 및 서비스 이름으로 변환
         //(클라이언트 주소, 클라이언트 주소의 크기, 호스트 이름, 호스트 이름 버퍼 크기, 포트번호, 포트 번호 최대 크기, 추가옵션)
         printf("Accepted connection from (%s, %s)\n", hostname, port);
-        doit(connfd);  // 트랜젝션 수행
-        Close(connfd); // 연결 종료
+        pthread_create(&tid, NULL, thread, connfdp);
+        
     }
 }
+
+void *thread(void *vargp)
+{
+int connfd = *((int *)vargp);
+Pthread_detach(pthread_self());
+Free(vargp);
+doit(connfd);  
+Close(connfd);
+return NULL;
+}
+
 
 /*
  * doit - 한개의 HTTP 트랜젝션 처리
