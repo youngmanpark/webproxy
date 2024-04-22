@@ -1,7 +1,8 @@
+
 #include "cache.h"
 #include "csapp.h"
+#include <signal.h>
 #include <stdio.h>
-
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr =
     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
@@ -57,7 +58,7 @@ void doit(int fd) {
 
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
     char filename[MAXLINE], request_ip[MAXLINE], port[MAXLINE];
-    rio_t rio, rio_com;
+    rio_t rio;
     int clientfd;
 
     // 요청 라인을 읽고 분석
@@ -167,13 +168,14 @@ void server_to_client(int clientfd, int fd, char *filename) {
     srcp = malloc(content_len);
     Rio_readnb(&response_rio, srcp, content_len);
     Rio_writen(fd, srcp, content_len);
-
-    web_object *web_ob = (web_object *)calloc(1, sizeof(web_object));
-    web_ob->response_ptr = srcp;
-    web_ob->content_len = content_len;
-    strcpy(web_ob->filename, filename);
-    regi_cache(web_ob);
-    Free(srcp);
+    if (content_len <= MAX_OBJECT_SIZE) {
+        web_object *web_ob = (web_object *)calloc(1, sizeof(web_object));
+        web_ob->response_ptr = srcp;
+        web_ob->content_len = content_len;
+        strcpy(web_ob->filename, filename);
+        regi_cache(web_ob);
+    } else
+        Free(srcp);
 }
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg) {
     // MAXBUF : 8192
