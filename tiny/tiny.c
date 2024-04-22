@@ -7,6 +7,7 @@
  *   - Fixed sprintf() aliasing issue in serve_static(), and clienterror().
  */
 #include "csapp.h"
+#include <signal.h>
 
 void doit(int fd);
 void read_requesthdrs(rio_t *rp);
@@ -46,6 +47,7 @@ int main(int argc, char **argv) {
  * doit - 한개의 HTTP 트랜젝션 처리
  */
 void doit(int fd) {
+    signal(SIGPIPE, SIG_IGN);
     int is_static;
     struct stat sbuf;
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
