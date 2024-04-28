@@ -1,6 +1,6 @@
 #include "csapp.h"
 
-/* Recommended max cache and object sizes */
+// 캐시와 객체 사이즈 정의
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
 
